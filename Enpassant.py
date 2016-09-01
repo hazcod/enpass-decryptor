@@ -89,18 +89,6 @@ class Enpassant:
         return self.unpad(cipher.decrypt(enc))
         
 
-    def getCards(self):
-        self.c.execute("SELECT * FROM Cards")
-        cards = self.c.fetchall()
-        ret = []
-        for card in cards:
-            # Decrypted string
-            dec = self.decrypt(card["Data"], self.crypto["key"], self.crypto["iv"])
-            # Parsing as object
-            item = json.loads(dec)
-            ret.append(item)
-        return ret
-    
     def pad(self, msg):
         return "    " + msg.ljust(18)
 
@@ -110,12 +98,14 @@ class Enpassant:
         name = name.lower ()
         clipbrd = None
         results = 0
+        names = []
         for card in cards:
             dec = self.decrypt(card["Data"], self.crypto["key"], self.crypto["iv"])
             card = json.loads(dec)
+            names.append(card["name"].lower())
             if name in card["name"].lower() and len(card["fields"]) > 0:
                 print self.pad("Name") + " :" + card["name"]
-                for field in card["fields"]:
+                for field in sorted(card["fields"], key=lambda x:x['label']):
                     print self.pad(field["label"]) + " :" + field["value"]
                     if field["type"] == "password":
                         results += 1
@@ -125,6 +115,10 @@ class Enpassant:
         if results == 1 and clipbrd is not None:
             copyToClip(clipbrd)
             print("Copied password to clipboard")
+        
+        with open('.enpassant', 'w') as f:
+            for name in names:
+                f.write("%s\n" % name)
 
 
 if __name__ == "__main__":
@@ -133,7 +127,7 @@ if __name__ == "__main__":
         print("\nusage: " + str(sys.argv[0]) + " name\n")
         sys.exit()
     else:
-        wallet = "/home/niels/Documents/Enpass/walletx.db"
+        wallet = "/home/user/Documents/Enpass/walletx.db"
         name = sys.argv[1]
         password = getpass.getpass("Master Password:")
         en = Enpassant(wallet, password)
