@@ -1,3 +1,5 @@
+#!/usr/bin/python2
+
 '''
 Enpassant
 Made by Steffen Zerbe
@@ -21,6 +23,10 @@ from pysqlcipher import dbapi2 as sqlite
 from Crypto.Cipher import AES
 import hashlib, binascii
 import json
+import getpass
+import pyperclip
+import time
+
 
 class Enpassant:
     def __init__(self, filename, password):
@@ -43,7 +49,12 @@ class Enpassant:
     def getCryptoParams(self):
         ret = {}
         # Identity contains stuff to decrypt data columns
-        self.c.execute("SELECT * FROM Identity")
+        try:
+            self.c.execute("SELECT * FROM Identity")
+        except sqlite.DatabaseError:
+            print("Invalid password")
+            sys.exit(1)
+
         identity = self.c.fetchone()
         
         # Info contains more parameters
@@ -86,21 +97,43 @@ class Enpassant:
             ret.append(item)
         return ret
     
-    def dumpCards(self):
-        cards = self.getCards()
+    def pad(self, msg):
+        return "    " + msg.ljust(18)
+
+    def getCard(self, name):
+        self.c.execute("SELECT * FROM Cards")
+        cards = self.c.fetchall()
+        name = name.lower ()
+        clipbrd = None
+        results = 0
         for card in cards:
-            name = card["name"] + ".json"
-            with open(name, 'w') as out:
-                json.dump(card, out)
-            
+            dec = self.decrypt(card["Data"], self.crypto["key"], self.crypto["iv"])
+            card = json.loads(dec)
+            if name in card["name"].lower() and len(card["fields"]) > 0:
+                print self.pad("Name") + " :" + card["name"]
+                for field in card["fields"]:
+                    print self.pad(field["label"]) + " :" + field["value"]
+                    if field["type"] == "password":
+                        results += 1
+                        clipbrd = field["value"]
+                print self.pad("Note :") + "\n" + card["note"]
         
+        if results == 1 and clipbrd is not None:
+            pyperclip.copy(clipbrd)
+            print("Copied password to clipboard")
+
+
 if __name__ == "__main__":
     import sys
-    if len(sys.argv ) < 3:
-        print("\nusage: " + str(sys.argv[0]) + " walletx.db password\n")
+    if len(sys.argv) != 2:
+        print("\nusage: " + str(sys.argv[0]) + " name\n")
         sys.exit()
     else:
-        en = Enpassant(sys.argv[1], sys.argv[2])
-        en.dumpCards();
+        wallet = "/home/xxx/Enpass/walletx.db"
+        name = sys.argv[1]
+        password = getpass.getpass("Master Password:")
+        en = Enpassant(wallet, password)
+        print ""
+        en.getCard(name)
     
     
