@@ -24,9 +24,13 @@ from Crypto.Cipher import AES
 import hashlib, binascii
 import json
 import getpass
-import pyperclip
 import time
+import subprocess
 
+def copyToClip(message):
+    p = subprocess.Popen(['xclip', '-in', '-selection', 'clipboard'],
+                         stdin=subprocess.PIPE, close_fds=True)
+    p.communicate(input=message.encode('utf-8'))
 
 class Enpassant:
     def __init__(self, filename, password):
@@ -119,7 +123,7 @@ class Enpassant:
                 print self.pad("Note :") + "\n" + card["note"]
         
         if results == 1 and clipbrd is not None:
-            pyperclip.copy(clipbrd)
+            copyToClip(clipbrd)
             print("Copied password to clipboard")
 
 
@@ -129,7 +133,7 @@ if __name__ == "__main__":
         print("\nusage: " + str(sys.argv[0]) + " name\n")
         sys.exit()
     else:
-        wallet = "/home/xxx/Enpass/walletx.db"
+        wallet = "/home/niels/Documents/Enpass/walletx.db"
         name = sys.argv[1]
         password = getpass.getpass("Master Password:")
         en = Enpassant(wallet, password)
