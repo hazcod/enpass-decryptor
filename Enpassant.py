@@ -1,36 +1,23 @@
-#!/usr/bin/python2
+#!/usr/bin/env python3
 
-'''
-Enpassant
-Made by Steffen Zerbe
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    
-'''
-
-from pysqlcipher import dbapi2 as sqlite
+from pysqlcipher3 import dbapi2 as sqlite
 from Crypto.Cipher import AES
 import hashlib, binascii
+
 import json
 import getpass
 import time
 import subprocess
+import os
+import argparse
 
 def copyToClip(message):
     p = subprocess.Popen(['xclip', '-in', '-selection', 'clipboard'],
                          stdin=subprocess.PIPE, close_fds=True)
     p.communicate(input=message.encode('utf-8'))
+
+def pad(msg):
+    return " "*2 + msg.ljust(18)
 
 class Enpassant:
     def __init__(self, filename, password):
@@ -66,16 +53,17 @@ class Enpassant:
         
         # Get params from stream
         i = 16 # First 16 bytes are for "mHashData", which is unused
-        ret["iv"] = ""
-        salt = ""
+        ret["iv"] = bytearray()
+        salt = bytearray()
         while i <= 31:
-            ret["iv"] += info[i]
+            ret["iv"].append( info[i] )
             i += 1
         while i <= 47:
-            salt += info[i]
+            salt.append( info[i] )
             i += 1
             
-        ret["key"] = self.generateKey(identity["Hash"], salt)
+        ret["iv"]  = bytes(ret["iv"])
+        ret["key"] = self.generateKey(identity["Hash"].encode('utf-8'), salt)
             
         return ret
         
@@ -86,11 +74,8 @@ class Enpassant:
     def decrypt(self, enc, key, iv ):
         # PKCS5
         cipher = AES.new(key, AES.MODE_CBC, iv )
-        return self.unpad(cipher.decrypt(enc))
+        return self.unpad(str(cipher.decrypt(enc), 'utf-8'))
         
-
-    def pad(self, msg):
-        return "    " + msg.ljust(18)
 
     def getCard(self, name):
         self.c.execute("SELECT * FROM Cards")
@@ -104,34 +89,64 @@ class Enpassant:
             card = json.loads(dec)
             names.append(card["name"].lower())
             if name in card["name"].lower() and len(card["fields"]) > 0:
-                print self.pad("Name") + " :" + card["name"]
+                print(pad("Name") + " :" + card["name"])
                 for field in sorted(card["fields"], key=lambda x:x['label']):
-                    print self.pad(field["label"]) + " :" + field["value"]
+                    print( pad(field["label"]) + " :" + field["value"] )
                     if field["type"] == "password":
                         results += 1
                         clipbrd = field["value"]
-                print self.pad("Note :") + "\n" + card["note"]
+                print( pad("Note :") + "\n" + card["note"] )
         
         if results == 1 and clipbrd is not None:
             copyToClip(clipbrd)
             print("Copied password to clipboard")
         
-        with open('.enpassant', 'w') as f:
+        with open('/home/niels/Documents/Enpass/.enpassant', 'w') as f:
             for name in names:
                 f.write("%s\n" % name)
 
 
-if __name__ == "__main__":
+def main(argv=None):
     import sys
-    if len(sys.argv) != 2:
-        print("\nusage: " + str(sys.argv[0]) + " name\n")
-        sys.exit()
+
+    wallet  = '/home/niels/Documents/Enpass/walletx.db'
+    command = ''
+    name    = ''
+
+    if argv is None:
+        parser = argparse.ArgumentParser ()
+
+        parser.add_argument("command", help="get, copy")
+        parser.add_argument("-w", "--wallet", help="The Enpass wallet")
+        parser.add_argument("name", help="the entry name")
+
+        args = parser.parse_args()
+
+        command = args.command
+        name = args.name
+        if args.wallet is not None:
+            wallet = args.wallet
     else:
-        wallet = "/home/user/Documents/Enpass/walletx.db"
-        name = sys.argv[1]
-        password = getpass.getpass("Master Password:")
-        en = Enpassant(wallet, password)
-        print ""
-        en.getCard(name)
-    
-    
+        if len(argv) != 3:
+            print("Args: command wallet name")
+            sys.exit(1)
+
+        command = argv[0]
+        wallet  = argv[1]
+        name    = argv[2]
+
+    if (args.command is None or args.command not in ['copy','get']):
+        print("Command: copy, get")
+        sys.exit(1)
+
+    if not os.path.isfile( wallet ):
+        print("Wallet not found: " + wallet)
+        sys.exit(1)
+
+    password = getpass.getpass( "Master Password:" )
+    en = Enpassant(wallet, password)
+    en.getCard( name )
+
+if __name__ == "__main__":
+    exit( main() )
+
