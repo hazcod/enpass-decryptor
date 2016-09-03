@@ -10,6 +10,7 @@ import time
 import subprocess
 import os
 import argparse
+import sys
 
 def copyToClip(message):
     p = subprocess.Popen(['xclip', '-in', '-selection', 'clipboard'],
@@ -18,6 +19,9 @@ def copyToClip(message):
 
 def pad(msg):
     return " "*2 + msg.ljust(18)
+
+def getScriptPath():
+    return os.path.dirname(os.path.realpath(sys.argv[0]))
 
 class Enpassant:
     def __init__(self, filename, password):
@@ -77,39 +81,26 @@ class Enpassant:
         return self.unpad(str(cipher.decrypt(enc), 'utf-8'))
         
 
-    def getCard(self, name):
+    def getCards(self, name):
+        results = []
+        name = name.lower ()
         self.c.execute("SELECT * FROM Cards")
         cards = self.c.fetchall()
-        name = name.lower ()
-        clipbrd = None
-        results = 0
-        names = []
-        for card in cards:
-            dec = self.decrypt(card["Data"], self.crypto["key"], self.crypto["iv"])
-            card = json.loads(dec)
-            names.append(card["name"].lower())
-            if name in card["name"].lower() and len(card["fields"]) > 0:
-                print(pad("Name") + " :" + card["name"])
-                for field in sorted(card["fields"], key=lambda x:x['label']):
-                    print( pad(field["label"]) + " :" + field["value"] )
-                    if field["type"] == "password":
-                        results += 1
-                        clipbrd = field["value"]
-                print( pad("Note :") + "\n" + card["note"] )
-        
-        if results == 1 and clipbrd is not None:
-            copyToClip(clipbrd)
-            print("Copied password to clipboard")
-        
-        with open('/home/niels/Documents/Enpass/.enpassant', 'w') as f:
-            for name in names:
-                f.write("%s\n" % name)
+        with open( getScriptPath() + '/.enpassant', 'w' ) as f:
+            for card in cards:
+                dec = self.decrypt(card["Data"], self.crypto["key"], self.crypto["iv"])
+                card = json.loads(dec)
+                if name in card["name"].lower() and len(card["fields"]) > 0:
+                    results.append( card )
 
-
+                f.write( card['name'].lower() + "\n" )
+    
+        return results
+                
 def main(argv=None):
     import sys
 
-    wallet  = '/home/niels/Documents/Enpass/walletx.db'
+    wallet  = '/home/user/Documents/Enpass/walletx.db'
     command = ''
     name    = ''
 
@@ -145,7 +136,31 @@ def main(argv=None):
 
     password = getpass.getpass( "Master Password:" )
     en = Enpassant(wallet, password)
-    en.getCard( name )
+    cards = en.getCards( name )
+
+    if command == "copy":
+        if len(cards) == 0:
+            print( "No entries for " + name )
+            sys.exit(1)
+        elif len(cards) > 1:
+            print( "Multiple entries for " + name )
+            sys.exit(1)
+
+    for card in cards:
+        if (command == "get"):
+            print( pad("Name") + " : " + card["name"] )
+
+        for field in sorted( card["fields"], key=lambda x:x['label'] ):
+            if (command == "get"):
+                print( pad(field['label']) + " : " + field['value'] )
+            if command == 'copy':
+                if field['type'] == 'password': 
+                    copyToClip( field['value'] )
+                elif field['type'] == 'username':
+                    print( 'Copied for user ' + field['value'] )
+
+        if (command == 'get'):
+            print( pad('Note') + " :\n" + card['note'] )
 
 if __name__ == "__main__":
     exit( main() )
